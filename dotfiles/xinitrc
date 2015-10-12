@@ -1,0 +1,9 @@
+path="/home/alex/git/x11-configs"
+redshift -l 49.9:-97.1 &
+xbindkeys &
+# This is created by `set-background` in this repo
+~/.fehbg &
+"$path"/scripts/dwm-bar &
+"$path"/scripts/idle-lock &
+"$path"/scripts/batteryd &
+exec dwm

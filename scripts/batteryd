@@ -1,0 +1,126 @@
+#!/usr/bin/env lua
+
+--
+-- Estimates time to charge/discharge by keeping a rolling median.
+-- Written in an evening. Please don't judge too harshly.
+--
+
+
+posix = require "posix"
+
+estimate_location = ".batteryd.estimate"
+
+-- ring_size affects how many historial samples to use for the rolling median.
+-- sleep_time affects how frequently we sample the battery for changes (in seconds)
+-- At 20 and 15, 5 minutes of history will be used.
+-- Lowering these values will give a quicker response to changes in power
+-- consumption, but it may be less accurate overall.
+ring_size = 80
+sleep_time = 15
+
+filenames = {
+  ac = "/sys/class/power_supply/AC/online",
+  energy_full = "/sys/class/power_supply/BAT0/energy_full",
+  energy = "/sys/class/power_supply/BAT0/energy_now",
+}
+
+function new_ring_buffer(size)
+  return {
+    add = function(self, element) table.insert(self, element)
+      if #self > size then
+        table.remove(self, 1)
+      end
+    end
+  }
+end
+
+function gather_data()
+  local values = {}
+  for name, filename in pairs(filenames) do
+    local handle = assert(io.open(filename, "r"))
+    values[name] = handle:read("*number")
+    handle:close()
+  end
+  -- This gets us microsecond precision, vs. second precision with os.time()
+  local time = posix.gettimeofday()
+  values.time = time.sec + tonumber("0." .. time.usec)
+  return values
+end
+
+function median(list)
+  local copy = {}
+  for i, v in ipairs(list) do
+    copy[i] = v
+  end
+  table.sort(copy)
+  return copy[math.floor(#copy/2)+1]
+end
+
+function readable_time(secs)
+  local hours = 0
+  local minutes = 0
+  while secs >= 3600 do
+    hours = hours + 1
+    secs = secs - 3600
+  end
+  while secs >= 60 do
+    minutes = minutes + 1
+    secs = secs - 60
+  end
+  return hours .. "h" .. minutes .. "m"
+end
+
+local previous = gather_data()
+local charging_rates_of_change = new_ring_buffer(ring_size)
+local battery_rates_of_change = new_ring_buffer(ring_size)
+while true do
+  posix.sleep(sleep_time)
+  local current = gather_data()
+
+  -- We need to restart our rolling median when we switch from charging to
+  -- discharging and vice-versa.
+  if previous.ac ~= current.ac then
+    previous = current
+  end
+
+  local change, template, left_to_go, ring
+  -- Plugged in
+  if current.ac == 1 then
+    ring = charging_rates_of_change
+    change = current.energy - previous.energy
+    template = "T until charged"
+    left_to_go = current.energy_full - current.energy
+  -- Discharging
+  elseif current.ac == 0 then
+    ring = battery_rates_of_change
+    change = previous.energy - current.energy
+    template = "T remaining"
+    left_to_go = current.energy
+  else
+    print("Unexpected value from " .. filenames.ac .. ": " .. current.ac)
+    os.exit(1)
+  end
+  -- Add the rate-of-change to the ring so we can keep a rolling median.
+  ring:add(change / (current.time - previous.time))
+
+  -- If there was no change for a while the rate-of-change may be 0
+  if median(ring) == 0 then
+    if (current.ac == 1) then
+      estimate = "Charged"
+    else
+      estimate = "Dead"
+    end
+  else
+    estimate = template:gsub("T", readable_time(left_to_go / median(ring)))
+  end
+
+  -- Replace old estimate with new one
+  local handle = assert(io.open(".batteryd.estimate.tmp", "w"))
+  handle:write(estimate .. "\n")
+  handle:close()
+  os.rename(".batteryd.estimate.tmp", estimate_location)
+
+  previous = current
+  print(estimate)
+end
+

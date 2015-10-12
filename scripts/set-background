@@ -1,0 +1,8 @@
+#!/bin/sh
+
+if [ -z $1 ]; then
+  echo "Need a filename"
+fi
+
+convert -resize 1440x900^ -quality 98 $1 ~/.wallpaper.jpg
+feh --bg-center ~/.wallpaper.jpg

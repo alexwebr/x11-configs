@@ -1,0 +1,10 @@
+#!/bin/sh
+
+while true; do
+	bat_estimate=$(cat .batteryd.estimate)
+	bat=$(echo "$(cat /sys/class/power_supply/BAT0/energy_now) / $(cat /sys/class/power_supply/BAT0/energy_full) * 100" | bc -l | cut -d '.' -f 1)
+	day=$(date "+%b %e")
+	time=$(date "+%a %l:%M%p")
+	xsetroot -name " $bat_estimate | $bat% | $time  $day "
+	sleep 30
+done
