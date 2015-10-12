@@ -2,7 +2,7 @@
 
 while true; do
 	sleep 10
-	if [ $(xprintidle) -ge 60000 ]; then
+	if [ \( ! -f "$HOME/.noidlelock" \) -a $(xprintidle) -ge 60000 ]; then
 		slock
 	fi
 done
