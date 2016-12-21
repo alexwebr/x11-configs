@@ -26,7 +26,8 @@ filenames = {
 
 function new_ring_buffer(size)
   return {
-    add = function(self, element) table.insert(self, element)
+    add = function(self, element)
+      table.insert(self, element)
       if #self > size then
         table.remove(self, 1)
       end
